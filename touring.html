@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>TOURING PRO - PHAN THIẾT</title>
+
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="mobile-web-app-capable" content="yes">
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/854/854878.png">
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        :root { --primary: #ff4b2b; --dark: #121212; --card: #1e1e1e; --accent: #00ff00; --off: #555; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--dark); color: white; margin: 0; height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
+        
+        header { background: #000; padding: 12px; display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid var(--primary); font-weight: 900; }
+        .power-btn { padding: 5px 15px; border-radius: 20px; border: none; font-weight: bold; cursor: pointer; transition: 0.3s; font-size: 12px; }
+        .btn-on { background: var(--accent); color: black; box-shadow: 0 0 10px var(--accent); }
+        .btn-off { background: var(--off); color: white; }
+
+        #login-screen { position: fixed; inset: 0; background: #000; z-index: 9999; display: flex; align-items: center; justify-content: center; }
+        .login-box { background: var(--card); padding: 30px; border-radius: 20px; border: 1px solid var(--primary); width: 85%; max-width: 320px; text-align: center; }
+        .login-input { width: 100%; padding: 12px; margin: 15px 0; border-radius: 8px; border: none; text-align: center; font-size: 20px; outline: none; }
+        
+        .tabs { display: flex; background: #111; }
+        .tab-btn { flex: 1; padding: 15px; border: none; background: none; color: #888; font-weight: bold; font-size: 11px; }
+        .tab-btn.active { color: var(--primary); border-bottom: 3px solid var(--primary); }
+        
+        .content { flex: 1; display: none; position: relative; }
+        .content.active { display: block; }
+        
+        .radio-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; }
+        .ptt-btn { width: 160px; height: 160px; border-radius: 50%; background: var(--primary); border: 8px solid #333; color: white; font-weight: bold; font-size: 18px; margin-bottom: 20px; }
+        .ptt-btn.speaking { background: var(--accent); box-shadow: 0 0 30px var(--accent); color: black; }
+        .ptt-btn.disabled { background: var(--off); opacity: 0.5; pointer-events: none; }
+
+        /* Đèn Test Mic */
+        .test-mic-container { width: 80%; height: 10px; background: #333; border-radius: 5px; overflow: hidden; position: relative; margin-top: 10px; }
+        #mic-level-bar { height: 100%; width: 0%; background: var(--accent); transition: width 0.1s; }
+
+        #map { height: 100%; width: 100%; }
+        .speed-warning { position: fixed; top: 110px; left: 50%; transform: translateX(-50%); background: red; color: white; padding: 10px 20px; border-radius: 30px; font-weight: bold; display: none; z-index: 2000; }
+        .sos-btn { position: fixed; bottom: 30px; right: 20px; width: 60px; height: 60px; background: red; border-radius: 50%; color: white; font-weight: 900; border: 3px solid white; z-index: 2000; }
+        
+        #off-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.85); z-index: 1000; display: none; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+        
+        .setting-item { padding: 20px; border-bottom: 1px solid #333; }
+        .setting-label { display: block; margin-bottom: 10px; font-weight: bold; color: #ccc; }
+        input[type="range"] { width: 100%; accent-color: var(--primary); height: 8px; }
+    </style>
+</head>
+<body>
+
+<div id="login-screen">
+    <div class="login-box">
+        <h2 style="color: var(--primary)">TOURING 2026</h2>
+        <input type="number" id="loginCode" class="login-input" placeholder="Nhập mã của từng người">
+        <button style="width:100%; padding:12px; background:var(--primary); color:white; border:none; border-radius:8px; font-weight:bold;" onclick="checkLogin()">VÀO ĐOÀN</button>
+    </div>
+</div>
+
+<div id="app-interface" style="display: none; flex-direction: column; height: 100vh;">
+    <header>
+        <span id="userNameDisplay">KHANG</span>
+        <button id="mainPowerBtn" class="power-btn btn-on" onclick="togglePower()">APP: ON</button>
+    </header>
+
+    <div id="off-overlay">
+        <h2 style="color: var(--off)">HỆ THỐNG ĐANG TẮT</h2>
+        <p>Nhấn nút ON để tiếp tục</p>
+    </div>
+
+    <div id="speedWarning" class="speed-warning">⚠️ QUÁ TỐC ĐỘ!</div>
+    
+    <div class="tabs">
+        <button class="tab-btn active" onclick="switchTab('radio', this)">BỘ ĐÀM</button>
+        <button class="tab-btn" onclick="switchTab('map-tab', this)">BẢN ĐỒ</button>
+        <button class="tab-btn" onclick="switchTab('music', this)">NHẠC</button>
+        <button class="tab-btn" onclick="switchTab('settings', this)">LOA</button>
+    </div>
+
+    <div id="radio" class="content active">
+        <div class="radio-screen">
+            <div id="voxStatus" style="color:var(--accent); font-size:12px; margin-bottom:10px; font-weight:bold;">VOX: TRỰC TUYẾN</div>
+            <button id="pttBtn" class="ptt-btn">NHẤN NÓI</button>
+            
+            <p style="font-size: 10px; color: #888; margin-bottom: 5px;">TEST MIC:</p>
+            <div class="test-mic-container">
+                <div id="mic-level-bar"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="map-tab" class="content"><div id="map"></div></div>
+    
+    <div id="music" class="content">
+        <iframe style="border-radius:12px" src="https://open.spotify.com/embed/playlist/0KsDWGetinS4rdE0GnQgYp?utm_source=generator&theme=0" width="100%" height="100%" frameBorder="0" allowfullscreen="" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe>
+    </div>
+
+    <div id="settings" class="content">
+        <div class="setting-item">
+            <span class="setting-label">Âm lượng nhạc</span>
+            <input type="range" min="0" max="100" value="80">
+        </div>
+        <div class="setting-item">
+            <span class="setting-label">Độ nhạy Bộ đàm (VOX)</span>
+            <input type="range" id="voxSense" min="5" max="60" value="25">
+            <p style="font-size: 11px; color: #888; margin-top: 8px;">*Cắm tai nghe hãy kéo về trái (số 15-20) để nhạy hơn.</p>
+        </div>
+    </div>
+
+    <button class="sos-btn" onclick="if(isAppOn) alert('Đã gửi SOS!')">SOS</button>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+    const users = {"1":"Khang","2":"Huy","3":"Long"};
+    let currentUser = null, map, myMarker, watchId, isAppOn = true, audioStream = null;
+
+    function checkLogin() {
+        const code = document.getElementById('loginCode').value;
+        if (users[code]) {
+            currentUser = users[code];
+            document.getElementById('login-screen').style.display = 'none';
+            document.getElementById('app-interface').style.display = 'flex';
+            document.getElementById('userNameDisplay').innerText = currentUser.toUpperCase();
+            initApp();
+        } else { alert("Mã không đúng!"); }
+    }
+
+    function togglePower() {
+        isAppOn = !isAppOn;
+        const btn = document.getElementById('mainPowerBtn');
+        const overlay = document.getElementById('off-overlay');
+        if (isAppOn) {
+            btn.innerText = "APP: ON"; btn.className = "power-btn btn-on";
+            overlay.style.display = "none"; startServices(); 
+        } else {
+            btn.innerText = "APP: OFF"; btn.className = "power-btn btn-off";
+            overlay.style.display = "flex"; stopServices(); 
+        }
+    }
+
+    function stopServices() {
+        if (watchId) navigator.geolocation.clearWatch(watchId);
+        if (audioStream) audioStream.getTracks().forEach(t => t.stop());
+        document.getElementById('voxStatus').innerText = "VOX: NGOẠI TUYẾN";
+        document.getElementById('mic-level-bar').style.width = "0%";
+    }
+
+    function startServices() {
+        watchId = navigator.geolocation.watchPosition(pos => {
+            if (!isAppOn) return;
+            const lat = pos.coords.latitude, lng = pos.coords.longitude;
+            const speed = Math.round((pos.coords.speed || 0) * 3.6);
+            if(myMarker) myMarker.setLatLng([lat, lng]);
+            document.getElementById('speedWarning').style.display = speed > 80 ? 'block' : 'none';
+        }, null, { enableHighAccuracy: true });
+        initVOX();
+    }
+
+    function initApp() {
+        map = L.map('map').setView([10.9333, 108.1000], 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+        myMarker = L.marker([10.9333, 108.1000]).addTo(map).bindPopup("Bạn");
+        startServices();
+    }
+
+    async function initVOX() {
+        try {
+            audioStream = await navigator.mediaDevices.getUserMedia({ 
+                audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } 
+            });
+            document.getElementById('voxStatus').innerText = "VOX: TRỰC TUYẾN";
+            
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const source = audioCtx.createMediaStreamSource(audioStream);
+            const analyser = audioCtx.createAnalyser();
+            source.connect(analyser); analyser.fftSize = 256;
+            const buffer = new Uint8Array(analyser.frequencyBinCount);
+
+            function update() {
+                if (!isAppOn) return;
+                analyser.getByteFrequencyData(buffer);
+                const avg = buffer.reduce((a, b) => a + b) / buffer.length;
+                
+                // CẬP NHẬT THANH TEST MIC (Thanh hiển thị sóng âm)
+                const levelBar = document.getElementById('mic-level-bar');
+                const percent = Math.min(avg * 1.5, 100); 
+                levelBar.style.width = percent + "%";
+
+                const btn = document.getElementById('pttBtn');
+                const threshold = document.getElementById('voxSense').value;
+
+                if (avg > threshold) {
+                    btn.classList.add('speaking');
+                    btn.innerText = "ĐANG PHÁT...";
+                } else {
+                    btn.classList.remove('speaking');
+                    btn.innerText = "NHẤN NÓI";
+                }
+                requestAnimationFrame(update);
+            }
+            update();
+        } catch (e) { console.log("Mic error"); }
+    }
+
+    function switchTab(id, btn) {
+        document.querySelectorAll('.content').forEach(c => c.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.getElementById(id).classList.add('active');
+        btn.classList.add('active');
+        if(id === 'map-tab' && map) setTimeout(() => map.invalidateSize(), 200);
+    }
+</script>
+</body>
+</html>
